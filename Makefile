@@ -248,15 +248,18 @@ libqemuutil.a: $(util-obj-y)
 
 block-modules = $(foreach o,$(block-obj-m),"$(basename $(subst /,-,$o))",) NULL
 util/module.o-cflags = -D'CONFIG_BLOCK_MODULES=$(block-modules)'
-
+libqemublock.a: $(block-obj-y) $(crypto-obj-y) $(io-obj-y) $(qom-obj-y) $(stub-obj-y) $(util-obj-y)
 ######################################################################
+
+tcmu-handler.o: tcmu-handler.c
+tcmu-handler.so: tcmu-handler.o libqemublock.a
+	gcc -shared -Wl,-z,muldefs -o tcmu-handler.so tcmu-handler.o libqemublock.a -ltcmu -lglib -lgfapi -lnfs -lrados -lrbd -lutil
 
 qemu-img.o: qemu-img-cmds.h
 
-qemu-img$(EXESUF): qemu-img.o $(block-obj-y) $(crypto-obj-y) $(io-obj-y) $(qom-obj-y) libqemuutil.a libqemustub.a
-qemu-nbd$(EXESUF): qemu-nbd.o $(block-obj-y) $(crypto-obj-y) $(io-obj-y) $(qom-obj-y) libqemuutil.a libqemustub.a
-qemu-io$(EXESUF): qemu-io.o $(block-obj-y) $(crypto-obj-y) $(io-obj-y) $(qom-obj-y) libqemuutil.a libqemustub.a
-
+qemu-img$(EXESUF): qemu-img.o libqemublock.a
+qemu-nbd$(EXESUF): qemu-nbd.o libqemublock.a
+qemu-io$(EXESUF): qemu-io.o libqemublock.a
 qemu-bridge-helper$(EXESUF): qemu-bridge-helper.o libqemuutil.a libqemustub.a
 
 fsdev/virtfs-proxy-helper$(EXESUF): fsdev/virtfs-proxy-helper.o fsdev/9p-marshal.o fsdev/9p-iov-marshal.o libqemuutil.a libqemustub.a

@@ -1584,7 +1584,7 @@ int main(void) { return tls_var; }
 
 EOF
   if compile_prog "-fPIE -DPIE" "-pie"; then
-    QEMU_CFLAGS="-fPIE -DPIE $QEMU_CFLAGS"
+    QEMU_CFLAGS="-fPIC $QEMU_CFLAGS"
     LDFLAGS="-pie $LDFLAGS"
     pie="yes"
     if compile_prog "" "-Wl,-z,relro -Wl,-z,now" ; then
