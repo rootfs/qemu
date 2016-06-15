@@ -95,36 +95,16 @@ static bool qemu_check_config(const char *cfgstring, char **reason)
 static BlockBackend *openfile(char *name)
 {
     Error *local_err = NULL;
-    BlockDriverState *bs;
 
-    BlockBackend *qemuio_blk = blk_new_open(name, NULL, NULL, BDRV_O_RDWR, &local_err);
+    BlockBackend *qemuio_blk = blk_new_open("file:/tmp/g1", NULL, NULL, BDRV_O_RDWR, &local_err);
     if (!qemuio_blk) {
-        error_reportf_err(local_err, "can't open%s%s: ",
-                          name ? " device " : "", name ?: "");
+        printf("failed to open %s", name);
         return NULL;
-    }
-
-    bs = blk_bs(qemuio_blk);
-    if (bdrv_is_encrypted(bs) && bdrv_key_required(bs)) {
-        char password[256];
-        printf("Disk image '%s' is encrypted.\n", name);
-        if (qemu_read_password(password, sizeof(password)) < 0) {
-            error_report("No password given");
-            goto error;
-        }
-        if (bdrv_set_key(bs, password) < 0) {
-            error_report("invalid password");
-            goto error;
-        }
     }
 
     blk_set_enable_write_cache(qemuio_blk, false);
 
     return qemuio_blk;
-
- error:
-    blk_unref(qemuio_blk);
-    return NULL;
 }
 
 int qemu_handler_open(struct tcmu_device *dev)
@@ -293,5 +273,7 @@ static struct tcmur_handler qemu_handler = {
 
 void handler_init(void)
 {
+    Error *local_error = NULL;
+    qemu_init_main_loop(&local_error);
 	tcmur_register_handler(&qemu_handler);
 }
