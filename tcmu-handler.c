@@ -95,10 +95,30 @@ static bool qemu_check_config(const char *cfgstring, char **reason)
 static BlockBackend *openfile(char *name)
 {
     Error *local_err = NULL;
-
-    BlockBackend *qemuio_blk = blk_new_open("file:/tmp/g1", NULL, NULL, BDRV_O_RDWR, &local_err);
+    char *path = NULL, *proto = NULL, qemu_proto[128], qemu_url[strlen(name)];
+    BlockBackend *qemuio_blk = NULL;
+    if (!name) {
+        return NULL;
+    }
+    /* strip qemu */
+    path = strchr(name, '/');
+    if (!path) {
+        printf("invalid path %s\n", name);
+        return NULL;
+    }
+    path += 1;
+    proto = strchr(path, '/');
+    if (!proto) {
+        printf("missing protocol %s\n", name);
+        return NULL;
+    }
+    memset(qemu_proto, 0, sizeof(qemu_proto));
+    strncpy(qemu_proto, path, proto - path);
+    proto += 1;
+    sprintf(qemu_url, "%s:%s", qemu_proto, proto);
+    qemuio_blk = blk_new_open(qemu_url, NULL, NULL, BDRV_O_RDWR, &local_err);
     if (!qemuio_blk) {
-        printf("failed to open %s", name);
+        printf("failed to open %s\n", qemu_url);
         return NULL;
     }
 
@@ -274,6 +294,7 @@ static struct tcmur_handler qemu_handler = {
 void handler_init(void)
 {
     Error *local_error = NULL;
+    bdrv_init();
     qemu_init_main_loop(&local_error);
 	tcmur_register_handler(&qemu_handler);
 }
