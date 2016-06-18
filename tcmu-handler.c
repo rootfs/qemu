@@ -174,6 +174,11 @@ void qemu_handler_close(struct tcmu_device *dev)
 	free(state);
 }
 
+static int set_medium_error(uint8_t *sense)
+{
+	return tcmu_set_sense_data(sense, MEDIUM_ERROR, ASC_READ_ERROR, NULL);
+}
+
 int qemu_handle_cmd(
 	struct tcmu_device *dev,
 	struct tcmulib_cmd *tcmulib_cmd)
@@ -184,6 +189,8 @@ int qemu_handle_cmd(
 	uint8_t *sense = tcmulib_cmd->sense_buf;
 	struct qemu_handler_state *state = tcmu_get_dev_private(dev);
 	uint8_t cmd;
+    size_t ret = 0;
+    void *buf;
 
 	cmd = cdb[0];
 
@@ -215,21 +222,15 @@ int qemu_handle_cmd(
 	case READ_12:
 	case READ_16:
 	{
-#if 0
-        int remaining;
-        size_t ret;
-		void *buf;
-		uint64_t offset;
+		uint64_t offset = state->block_size * tcmu_get_lba(cdb);
 		int length = tcmu_get_xfer_length(cdb) * state->block_size;
-
 		/* Using this buf DTRT even if seek is beyond EOF */
 		buf = malloc(length);
 		if (!buf)
 			return set_medium_error(sense);
 		memset(buf, 0, length);
-        offset = state->block_size * tcmu_get_lba(cdb);
 
-		ret = pread(state->fd, buf, length, offset);
+		ret = blk_pread(state->drv, offset, (uint8_t *)buf, length);
 		if (ret == -1) {
 			errp("read failed: %m\n");
 			free(buf);
@@ -239,7 +240,7 @@ int qemu_handle_cmd(
 		tcmu_memcpy_into_iovec(iovec, iov_cnt, buf, length);
 
 		free(buf);
-#endif
+
 		return SAM_STAT_GOOD;
 	}
 	break;
@@ -247,18 +248,17 @@ int qemu_handle_cmd(
 	case WRITE_10:
 	case WRITE_12:
 	case WRITE_16:
-	{
-/*    
+	{    
 		uint64_t offset = state->block_size * tcmu_get_lba(cdb);
 		int length = be16toh(*((uint16_t *)&cdb[7])) * state->block_size;
 
-		remaining = length;
+		int remaining = length;
 
 		while (remaining) {
 			unsigned int to_copy;
 
 			to_copy = (remaining > iovec->iov_len) ? iovec->iov_len : remaining;
-			ret = pwrite(state->fd, iovec->iov_base, to_copy, offset);
+			ret = blk_pwrite(state->drv, offset, (uint8_t *)iovec->iov_base, to_copy, 0);
 			if (ret == -1) {
 				errp("Could not write: %m\n");
 				return set_medium_error(sense);
@@ -268,7 +268,7 @@ int qemu_handle_cmd(
 			offset += to_copy;
 			iovec++;
 		}
-*/
+
 		return SAM_STAT_GOOD;
 	}
 	break;
