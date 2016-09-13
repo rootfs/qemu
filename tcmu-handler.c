@@ -225,21 +225,20 @@ int qemu_handle_cmd(
 		uint64_t offset = state->block_size * tcmu_get_lba(cdb);
 		int length = tcmu_get_xfer_length(cdb) * state->block_size;
 		/* Using this buf DTRT even if seek is beyond EOF */
-		buf = malloc(length);
+		buf = blk_blockalign(state->drv, length);
 		if (!buf)
 			return set_medium_error(sense);
 		memset(buf, 0, length);
-
 		ret = blk_pread(state->drv, offset, (uint8_t *)buf, length);
 		if (ret == -1) {
-			errp("read failed: %m\n");
-			free(buf);
+			errp("read failed\n");
+			qemu_vfree(buf);
 			return set_medium_error(sense);
 		}
 
 		tcmu_memcpy_into_iovec(iovec, iov_cnt, buf, length);
 
-		free(buf);
+		qemu_vfree(buf);
 
 		return SAM_STAT_GOOD;
 	}
@@ -251,27 +250,36 @@ int qemu_handle_cmd(
 	{    
 		uint64_t offset = state->block_size * tcmu_get_lba(cdb);
 		int length = be16toh(*((uint16_t *)&cdb[7])) * state->block_size;
-
 		int remaining = length;
-
-		while (remaining) {
+        int total = 0;
+		while (remaining > 0) {
 			unsigned int to_copy;
 
 			to_copy = (remaining > iovec->iov_len) ? iovec->iov_len : remaining;
-			ret = blk_pwrite(state->drv, offset, (uint8_t *)iovec->iov_base, to_copy, 0);
-			if (ret == -1) {
-				errp("Could not write: %m\n");
-				return set_medium_error(sense);
-			}
+            buf = blk_blockalign(state->drv, to_copy);
+            if (!buf)
+                return set_medium_error(sense);
+            memcpy(buf, iovec->iov_base, to_copy);
+            total = blk_pwrite(state->drv, offset, (uint8_t *)buf, to_copy, 0);
+            qemu_vfree(buf);
+            if (total < 0) {
+                errp("Could not write\n");
+                return set_medium_error(sense);
+            }
 
 			remaining -= to_copy;
 			offset += to_copy;
 			iovec++;
 		}
-
+       
 		return SAM_STAT_GOOD;
 	}
 	break;
+	case UNMAP:
+		/* TODO: implement UNMAP */
+		return tcmu_set_sense_data(sense, ILLEGAL_REQUEST,
+					     ASC_INVALID_FIELD_IN_CDB, NULL);
+		break;
 	default:
 		errp("unknown command %x\n", cdb[0]);
 		return TCMU_NOT_HANDLED;
