@@ -13,15 +13,14 @@
  * License for the specific language governing permissions and limitations
  * under the License.
 */
-
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 #include <scsi/scsi.h>
 
 #include "tcmu-runner.h"
@@ -89,6 +88,13 @@ struct qemu_handler_state {
     
 static bool qemu_check_config(const char *cfgstring, char **reason)
 {
+	char *path;
+    errp("cfg string %s\n", cfgstring);
+
+	path = strchr(cfgstring, '/');
+	if (!path) {
+        return false;
+	}
 	return true;
 }
 
@@ -132,10 +138,10 @@ int qemu_handler_open(struct tcmu_device *dev)
     struct qemu_handler_state *state;
 	int64_t size;
 	char *config;
+    
 	state = calloc(1, sizeof(*state));
 	if (!state)
 		return -ENOMEM;
-
 	tcmu_set_dev_private(dev, state);
 
 	state->block_size = tcmu_get_attribute(dev, "hw_block_size");
@@ -191,7 +197,6 @@ int qemu_handle_cmd(
 	uint8_t cmd;
     size_t ret = 0;
     void *buf;
-
 	cmd = cdb[0];
 
 	switch (cmd) {
@@ -224,12 +229,16 @@ int qemu_handle_cmd(
 	{
 		uint64_t offset = state->block_size * tcmu_get_lba(cdb);
 		int length = tcmu_get_xfer_length(cdb) * state->block_size;
+        errp("into read from %ld\n", offset);
+
 		/* Using this buf DTRT even if seek is beyond EOF */
 		buf = blk_blockalign(state->drv, length);
 		if (!buf)
 			return set_medium_error(sense);
 		memset(buf, 0, length);
-		ret = blk_pread(state->drv, offset, (uint8_t *)buf, length);
+        errp("to read from %ld\n", offset);
+		ret = blk_pread_unthrottled(state->drv, offset, (uint8_t *)buf, length);
+        errp("read %lu from %ld\n", ret, offset);        
 		if (ret == -1) {
 			errp("read failed\n");
 			qemu_vfree(buf);
@@ -252,15 +261,20 @@ int qemu_handle_cmd(
 		int length = be16toh(*((uint16_t *)&cdb[7])) * state->block_size;
 		int remaining = length;
         int total = 0;
+
 		while (remaining > 0) {
 			unsigned int to_copy;
 
 			to_copy = (remaining > iovec->iov_len) ? iovec->iov_len : remaining;
             buf = blk_blockalign(state->drv, to_copy);
-            if (!buf)
+            if (!buf){
                 return set_medium_error(sense);
+            }
             memcpy(buf, iovec->iov_base, to_copy);
+            errp("to write %d @ %ld\n", to_copy, offset);
             total = blk_pwrite(state->drv, offset, (uint8_t *)buf, to_copy, 0);
+            errp("write %d @ %ld result %d\n", to_copy, offset, total);
+            
             qemu_vfree(buf);
             if (total < 0) {
                 errp("Could not write\n");
@@ -271,15 +285,10 @@ int qemu_handle_cmd(
 			offset += to_copy;
 			iovec++;
 		}
-       
+
 		return SAM_STAT_GOOD;
 	}
 	break;
-	case UNMAP:
-		/* TODO: implement UNMAP */
-		return tcmu_set_sense_data(sense, ILLEGAL_REQUEST,
-					     ASC_INVALID_FIELD_IN_CDB, NULL);
-		break;
 	default:
 		errp("unknown command %x\n", cdb[0]);
 		return TCMU_NOT_HANDLED;
@@ -294,7 +303,7 @@ static struct tcmur_handler qemu_handler = {
 	.check_config = qemu_check_config,
 	.open = qemu_handler_open,
 	.close = qemu_handler_close,
-	.name = "qemu",
+	.name = "qemu block device handler",
 	.subtype = "qemu",
 	.handle_cmd = qemu_handle_cmd,
 };
