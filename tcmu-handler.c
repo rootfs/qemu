@@ -12,7 +12,7 @@
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
  * License for the specific language governing permissions and limitations
  * under the License.
-*/
+ */
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
@@ -122,7 +122,7 @@ static BlockBackend *openfile(char *name)
     strncpy(qemu_proto, path, proto - path);
     proto += 1;
     sprintf(qemu_url, "%s:%s", qemu_proto, proto);
-    qemuio_blk = blk_new_open(qemu_url, NULL, NULL, BDRV_O_RDWR, &local_err);
+    qemuio_blk = blk_new_open(qemu_url, NULL, NULL, BDRV_O_RDWR|BDRV_O_NOCACHE, &local_err);
     if (!qemuio_blk) {
         printf("failed to open %s\n", qemu_url);
         return NULL;
@@ -209,8 +209,8 @@ int qemu_handle_cmd(
 	case SERVICE_ACTION_IN_16:
 		if (cdb[1] == READ_CAPACITY_16)
 			return tcmu_emulate_read_capacity_16(state->num_lbas,
-							     state->block_size,
-							     cdb, iovec, iov_cnt, sense);
+                                                 state->block_size,
+                                                 cdb, iovec, iov_cnt, sense);
 		else
 			return TCMU_NOT_HANDLED;
 		break;
